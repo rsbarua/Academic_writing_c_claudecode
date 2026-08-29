@@ -1,4 +1,4 @@
-# Verification Protocol (검증 하네스) (v0.3.0)
+# Verification Protocol (검증 하네스) (v0.3.1)
 
 > harness-engineering식 produce→verify→fix→re-verify 자동 루프 정의.
 > 각 산출 단계 뒤에 검증 게이트를 두어 제약 무시·인용 환각·수치 조작을 차단한다.
@@ -190,6 +190,7 @@ required_action: replace with 54.3 or remove
 - **위치:** `review/gates/phase_NN_<name>.GATE.md`
 - **기록 주체:** Verifier 판정 후 메인 에이전트가 기록 (Verifier 출력을 옮김).
 - **형식:** `review/gates/_TEMPLATE.GATE.md` 참조.
+- **한 파일에 여러 산출물:** 블록을 `---` 줄로 구분한다(파서는 top-level `artifact:` 키가 반복될 때마다 새 블록으로 분리하므로 블록이 병합되지 않는다). 각 블록은 독립 판정 — 한 블록의 `citation: FAIL`이 다른 블록의 `PASS`에 가려지지 않는다. 블록이 2개 이상이면 `check_gate.py`는 **`--artifact`를 필수**로 요구하고 없으면 loud FAIL. artifact 경로 비교는 슬래시 무관(`drafts\05_results.md` == `drafts/05_results.md`; `--verify-hash`/`--cross-check` 경로도 동일).
 - **규칙:** 어떤 섹션/단계도 게이트 원장에 해당 산출물의 `status: PASS`가 없으면 다음으로 진행 금지.
 - **Freshness (stale-gate guard):** PASS 기록 시 검증 대상 파일의 sha256를 `provenance:` 블록에 적고, 게이트 확인 시 `--verify-hash`로 재대조한다. 파일이 바뀌었으면 stale로 FAIL — **병렬 검증·revision 라운드에서 낡은 PASS가 살아남는 것을 막는다.** 해시 계산: `py scripts\check_gate.py --compute-hash drafts\05_results.md`.
 - **Cross-check (ledger ↔ live):** `--require-check`는 원장이 `PASS`라고 *적혀 있는지*만 본다. 결정적 차원(`citation`/`numbers`/`revision_claims`)은 `--cross-check LABEL=PATH`로 **정본 checker를 즉석 재실행**해 원장 기록이 실제와 일치하는지 검증한다. checker를 돌리지 않고 적은 가짜 `PASS`, 또는 산출물이 바뀐 뒤 남은 stale `PASS`를 모순(contradiction)으로 잡는다. **live 체크가 FAIL이면 원장 내용과 무관하게 게이트 FAIL** — 깨진 산출물은 원장이 정직하게 FAIL을 적었더라도 통과할 수 없다(그 차원을 `--require-check`로 걸지 않았어도). 소스 미도달 시 조용히 통과하지 않고 **loud FAIL**. 이는 STOP Signals의 "PASS 받았으니 안전" 자기기만을 결정적으로 차단한다.
