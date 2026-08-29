@@ -221,5 +221,55 @@ class CheckCitationsEnforcementToggleTests(unittest.TestCase):
             self.assertIn("abstract-only", strict.failures[0].reason)
 
 
+class MalformedCitationTagTests(unittest.TestCase):
+    """EVID-like tags outside the strict id charset must FAIL, not vanish."""
+
+    def _project(self, tmp: Path, body: str):
+        evidence_path = tmp / "evidence.md"
+        artifact_path = tmp / "03_introduction.md"
+        evidence_path.write_text(SAMPLE_EVIDENCE, encoding="utf-8")
+        artifact_path.write_text(body, encoding="utf-8")
+        return evidence_path, artifact_path
+
+    def test_malformed_tags_fail_instead_of_passing_with_zero_tokens(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence_path, artifact_path = self._project(
+                Path(tmp),
+                "Apostrophe [EVID:o'brien_2021], umlaut [EVID:müller_2020], space [EVID:Kim 2020].\n",
+            )
+            result = module.check_citations([artifact_path], evidence_path=evidence_path)
+            self.assertFalse(result.passed)
+            self.assertEqual(result.checked_tokens, 3)
+            self.assertEqual(
+                sorted(f.citation_id for f in result.failures),
+                sorted(["o'brien_2021", "müller_2020", "Kim 2020"]),
+            )
+            for failure in result.failures:
+                self.assertIn("malformed citation id", failure.reason)
+
+    def test_well_formed_tags_are_not_reported_as_malformed(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence_path, artifact_path = self._project(
+                Path(tmp), "Valid [EVID:smith_2020] and `[EVID:in code]` example.\n"
+            )
+            self.assertEqual(module.iter_malformed_evid_tags(artifact_path), [])
+            result = module.check_citations([artifact_path], evidence_path=evidence_path)
+            self.assertTrue(result.passed)
+            self.assertEqual(result.checked_tokens, 1)
+
+    def test_line_numbers_after_code_fence_are_preserved(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence_path, artifact_path = self._project(
+                Path(tmp),
+                "Intro.\n```\n[EVID:example_0000]\n```\nUnknown source [EVID:ghost_1999].\n",
+            )
+            result = module.check_citations([artifact_path], evidence_path=evidence_path)
+            self.assertFalse(result.passed)
+            self.assertEqual([(f.citation_id, f.line) for f in result.failures], [("ghost_1999", 5)])
+
+
 if __name__ == "__main__":
     unittest.main()

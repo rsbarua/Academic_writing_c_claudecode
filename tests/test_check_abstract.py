@@ -154,6 +154,22 @@ class CheckAbstractTests(unittest.TestCase):
             out = module.format_result(result, a)
             self.assertIn("number: <0.001", out)
 
+    def test_half_tie_rounding_uses_decimal_not_float_round(self) -> None:
+        # float round(2.675, 2) == 2.67 (binary 2.675 sits just below the tie), so
+        # an abstract "2.68" derived from a body "2.675" was a false mismatch.
+        # Decimal rounding on the printed value fixes that; both half-up (2.68)
+        # and half-even (2.66 from 2.665) tie-breaking are accepted.
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            a, body = self._files(
+                Path(tmp),
+                abstract="Effect size was 2.68 and the ratio was 2.66.\n",
+                body="Effect size 2.675 and ratio 2.665 were recorded.\n",
+            )
+            result = module.check_abstract(a, body)
+            self.assertTrue(result.passed, [i.number for i in result.issues])
+            self.assertEqual(result.checked, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

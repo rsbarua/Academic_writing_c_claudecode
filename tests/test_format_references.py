@@ -158,6 +158,35 @@ class FormatReferencesTests(unittest.TestCase):
             result = module.build([art], evidence_path=ev, style="author-year")
             self.assertEqual(result.labels["smith_2020a"], "(Smith, 2020a)")
 
+    def test_author_year_accepts_keyword_suffix(self) -> None:
+        # evidence_guide allows an `author_year_keyword` id; the suffix must not
+        # leak into the in-text label nor demote the entry to raw-id sorting.
+        module = load_module()
+        self.assertEqual(module.author_year("kim_2020_fusion"), ("Kim", "2020"))
+        self.assertEqual(module.author_year("van_der_berg_2019_rct"), ("Van Der Berg", "2019"))
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            ev = tmp / "evidence.md"
+            ev.write_text(
+                "## Reference List\n\n### [1] Kim et al., 2020\n\n"
+                "- **Evidence ID:** kim_2020_fusion\n"
+                "- **Citation:** Kim S. Fusion outcomes. Spine. 2020;45(2):10-19.\n"
+                "- **Source Status:** verified\n\n"
+                "### [2] Kim et al., 2021\n\n"
+                "- **Evidence ID:** kim_2021\n"
+                "- **Citation:** Kim J. Later cohort. Spine J. 2021;21(4):200-210.\n"
+                "- **Source Status:** verified\n",
+                encoding="utf-8",
+            )
+            art = tmp / "03_introduction.md"
+            art.write_text("Cited [EVID:kim_2021] then [EVID:kim_2020_fusion].\n", encoding="utf-8")
+            result = module.build([art], evidence_path=ev, style="author-year")
+            self.assertEqual(result.labels["kim_2020_fusion"], "(Kim, 2020)")
+            # Sorted by (author, year): 2020 before 2021 -- raw-id sorting put
+            # "kim_2021" ahead of "kim_2020_fusion".
+            self.assertTrue(result.references[0].startswith("Kim S."))
+            self.assertTrue(result.references[1].startswith("Kim J."))
+
 
 class FormatReferencesConvertCliTests(unittest.TestCase):
     """End-to-end --convert: writes *_formatted.md sibling, leaves source intact."""

@@ -118,17 +118,19 @@ def parse_response_markdown(text: str, keep_change_markers: bool = False) -> lis
             mode = "comment"
             continue
 
-        response_match = re.match(r"^response\s*:?\s*(.*)$", clean, flags=re.IGNORECASE)
+        # Headings win over the "Response:" label so "# Response to Reviewers"
+        # stays a title instead of becoming "Response: to Reviewers".
+        if paragraph.lstrip().startswith("#"):
+            blocks.append(Block("title", clean))
+            mode = "body"
+            continue
+
+        response_match = re.match(r"^response\s*:\s*(.*)$", clean, flags=re.IGNORECASE)
         if response_match:
             response_text = response_match.group(1).strip()
             text_value = "Response:" if not response_text else f"Response: {response_text}"
             blocks.append(Block("response", text_value))
             mode = "response"
-            continue
-
-        if paragraph.lstrip().startswith("#"):
-            blocks.append(Block("title", clean))
-            mode = "body"
             continue
 
         if mode == "revised":

@@ -46,7 +46,19 @@ BOUNDARY_RE = re.compile(
     r"^\s*(?:\*{1,2})?\s*(Reviewer\s*#?\s*\d+|Comment\s+\d+\s*[).:\]]|Location\s*:|Revised text\s*:|Reviewer closing\s*:|\[CHANGE\])",
     re.IGNORECASE,
 )
-PLACEHOLDER_RE = re.compile(r"\[[^\]]*\]")
+BRACKET_RE = re.compile(r"\[[^\]]*\]")
+# Citation-shaped brackets are legitimate in a response ("see ref [12]",
+# "[3-5]", "[1, 2]", "[EVID:kim_2020]") and must not trip the placeholder check.
+# Anything else in brackets (spaces, Korean, TODO/insert wording) is template text.
+CITATION_BRACKET_RE = re.compile(r"\[(?:EVID:[^\]\s]+|\d+(?:\s*[-–,]\s*\d+)*)\]", re.IGNORECASE)
+
+
+def has_placeholder(text: str) -> bool:
+    """True if `text` contains a [bracket] that is not a citation reference."""
+    return any(
+        not CITATION_BRACKET_RE.fullmatch(match.group(0))
+        for match in BRACKET_RE.finditer(text)
+    )
 
 
 class CommentEntry(NamedTuple):
@@ -158,7 +170,7 @@ def check_response_coverage(
                 "RESPONSE_EMPTY", entry.reviewer, entry.number, entry.line,
                 f"{label} has an empty Response.",
             ))
-        elif PLACEHOLDER_RE.search(entry.response_text):
+        elif has_placeholder(entry.response_text):
             failures.append(CoverageIssue(
                 "RESPONSE_PLACEHOLDER", entry.reviewer, entry.number, entry.line,
                 f"{label} Response still contains a [bracketed] template placeholder.",

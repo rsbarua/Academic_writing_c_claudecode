@@ -128,8 +128,46 @@ class DecideTests(unittest.TestCase):
             self.assertIn(
                 "Rule 8", m.decide(event(tmp, file_path="drafts/paper1_x/04_methods.md"))
             )
-            (paper / "draft_plan.md").write_text("x", encoding="utf-8")
+            (paper / "draft_plan.md").write_text(
+                "# Draft Plan\n\nApproved plan for paper 1.\n\n- [x] 사용자 승인 완료\n",
+                encoding="utf-8",
+            )
             self.assertIsNone(m.decide(event(tmp, file_path="drafts/paper1_x/04_methods.md")))
+
+    def test_blocks_plan_without_approval_line(self) -> None:
+        # Rule 9: a plan that omits the approval checkbox entirely is not an
+        # approved plan (previously only an UNCHECKED box was rejected, so bare
+        # content like "x" passed the gate).
+        m = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            drafts = Path(tmp) / "drafts"
+            drafts.mkdir()
+            (drafts / "draft_plan.md").write_text(
+                "# Draft Plan\n\n## 1. Key Message\nA complete plan with no approval line.\n",
+                encoding="utf-8",
+            )
+            reason = m.decide(event(tmp, file_path="drafts/04_methods.md"))
+            self.assertIsNotNone(reason)
+            self.assertIn("not been approved", reason)
+
+            data = Path(tmp) / "data"
+            (data / "py").mkdir(parents=True)
+            (data / "analysis_plan.md").write_text(
+                "# Analysis Plan\n\nResearch question: compare groups.\n", encoding="utf-8"
+            )
+            reason = m.decide(event(tmp, file_path="data/py/01_descriptive.py"))
+            self.assertIsNotNone(reason)
+            self.assertIn("Rule 7", reason)
+
+    def test_approval_checkbox_case_insensitive(self) -> None:
+        m = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            drafts = Path(tmp) / "drafts"
+            drafts.mkdir()
+            (drafts / "draft_plan.md").write_text(
+                "# Draft Plan\n\nApproved.\n\n- [X] **사용자 승인 완료**\n", encoding="utf-8"
+            )
+            self.assertIsNone(m.decide(event(tmp, file_path="drafts/04_methods.md")))
 
     def test_blocks_analysis_script_without_plan(self) -> None:
         m = load_module()

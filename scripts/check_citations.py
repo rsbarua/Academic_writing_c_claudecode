@@ -17,6 +17,11 @@ from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
 EVID_RE = re.compile(r"\[EVID:([A-Za-z0-9_.-]+)\]")
+# Loose form: anything that looks like an EVID tag. Tags that match this but
+# not EVID_RE (e.g. "[EVID:o'brien_2021]", "[EVID:müller_2020]",
+# "[EVID:Kim 2020]") are malformed and must fail rather than vanish from the
+# gate as "0 tokens".
+LOOSE_EVID_RE = re.compile(r"\[EVID:([^\]]*)\]")
 HEADING_RE = re.compile(r"^###\s+(.+?)\s*$", flags=re.MULTILINE)
 FIELD_RE = re.compile(r"^-\s+\*\*(.+?):\*\*\s*(.*)$")
 FENCE_RE = re.compile(r"```.*?```", flags=re.DOTALL)
@@ -54,8 +59,10 @@ def normalize_status(value: str) -> str:
 
 
 def strip_code_fences(text: str) -> str:
-    text = FENCE_RE.sub("", text)
-    return INLINE_CODE_RE.sub("", text)
+    # Blank fences and inline code length-preservingly so reported line
+    # numbers after a fence stay correct.
+    text = FENCE_RE.sub(lambda match: "\n" * match.group().count("\n"), text)
+    return INLINE_CODE_RE.sub(lambda match: " " * len(match.group()), text)
 
 
 def slugify_id(value: str) -> str:
@@ -130,6 +137,17 @@ def iter_evid_tokens(artifact: Path) -> list[tuple[str, int]]:
     return tokens
 
 
+def iter_malformed_evid_tags(artifact: Path) -> list[tuple[str, int]]:
+    """Return (raw_id, line) for EVID-like tags that do not match EVID_RE."""
+    text = strip_code_fences(artifact.read_text(encoding="utf-8"))
+    malformed: list[tuple[str, int]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for match in LOOSE_EVID_RE.finditer(line):
+            if not EVID_RE.fullmatch(match.group(0)):
+                malformed.append((match.group(1), line_number))
+    return malformed
+
+
 def check_citations(
     artifacts: list[Path],
     *,
@@ -157,7 +175,18 @@ def check_citations(
             continue
 
         tokens = iter_evid_tokens(artifact)
-        checked_tokens += len(tokens)
+        malformed = iter_malformed_evid_tags(artifact)
+        checked_tokens += len(tokens) + len(malformed)
+        for raw_id, line_number in malformed:
+            failures.append(
+                CitationIssue(
+                    artifact,
+                    raw_id,
+                    line_number,
+                    "malformed citation id (allowed: A-Z a-z 0-9 _ . -)",
+                    "Rewrite the tag as [EVID:author_year] using only ASCII letters, digits, '_', '.', '-'.",
+                )
+            )
         if require_citations and not tokens:
             failures.append(
                 CitationIssue(

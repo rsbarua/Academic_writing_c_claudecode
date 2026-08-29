@@ -13,6 +13,13 @@ Do not proceed to the next section or phase until the relevant gate file passes
 
 Use one key-value block per artifact. Keep field names unchanged.
 
+**Several artifacts in one file:** separate the blocks with a `---` line (the parser also
+starts a new block at every top-level `artifact:` key, so blocks never merge). Each block
+is verified on its own — a `citation: FAIL` in one block is never masked by a `PASS` in
+another. When a file holds more than one block, `check_gate.py` **requires `--artifact`**
+to select the block to verify and fails loudly otherwise. Artifact paths compare
+slash-insensitively (`drafts\05_results.md` matches `drafts/05_results.md`).
+
 ```yaml
 phase: Phase 4 - Draft Sections
 artifact: drafts/05_results.md

@@ -1,4 +1,4 @@
-# Statistical Analysis Guide (v0.3.0)
+# Statistical Analysis Guide (v0.3.1)
 
 > 분석 접근을 확정하기 전에 `/paper-debate <분석 주제> stats`로 통계 담당 공동 저자(Codex)와 토론할 수 있다 (작성 전, 선택). 절차: `docs/debate_protocol.md`.
 
@@ -116,7 +116,14 @@ analysis_plan.md 작성 시:
 - Primary: VAS back pain change at 12 months
 - Secondary: ODI, VAS leg pain, patient satisfaction
 - Exploratory: ROM, operative time, blood loss, hospital stay, EQ-5D
+
+...
+
+## 승인
+- [ ] 사용자 승인 완료 → **분석 스크립트 생성 시작**
 ```
+
+> ⚠️ 마지막 승인 체크박스는 필수. `scripts/hooks/enforce_gates.py`는 `- [x] 사용자 승인 완료`가 **체크된** analysis_plan.md가 있어야만 `data/**/py/*.py` 생성을 허용한다(체크박스 부재·미체크 = 미승인, Rule 7·9).
 
 **Methods에 기술할 때:**
 - "The primary endpoint was the change in VAS back pain score at 12 months."

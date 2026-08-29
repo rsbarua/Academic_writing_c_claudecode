@@ -24,6 +24,7 @@ import xml.etree.ElementTree as ET
 import argparse
 import re
 import time
+import unicodedata
 
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 ID_CONVERTER_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
@@ -114,13 +115,16 @@ def _parse_article(elem):
 
     # Authors
     authors = []
+    last_names = []
     for au in elem.findall(".//Author"):
         ln = au.findtext("LastName", "")
         ini = au.findtext("Initials", "")
         if ln:
             authors.append(f"{ln} {ini}".strip())
+            last_names.append(ln.strip())
     a["authors"] = authors
-    a["first_author"] = authors[0].split()[0] if authors else "Unknown"
+    # Full LastName, not the first whitespace-token ("van der Berg", not "van").
+    a["first_author"] = last_names[0] if last_names else "Unknown"
 
     # Journal
     ji = elem.find(".//Journal/JournalIssue")
@@ -231,9 +235,19 @@ def guess_study_design(pub_types):
     return "[TODO - study type, n=?, follow-up period]"
 
 
+def slugify(value):
+    """Lowercase ASCII slug safe for [EVID:id] tags and file names.
+
+    "O'Brien" -> "o_brien", "Müller" -> "muller", "van der Berg" -> "van_der_berg".
+    check_citations.EVID_RE only accepts [A-Za-z0-9_.-], so ids must be ASCII.
+    """
+    ascii_text = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "_", ascii_text.lower()).strip("_")
+
+
 def format_evidence_entry(a, ref_num):
     """Format article as evidence.md entry."""
-    fa = a["first_author"].lower()
+    fa = slugify(a["first_author"]) or "unknown"
     year = a["year"]
     citation = format_citation(a)
     design = guess_study_design(a.get("pub_types", []))

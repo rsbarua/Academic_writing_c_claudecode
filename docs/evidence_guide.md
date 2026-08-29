@@ -1,4 +1,4 @@
-# Evidence 작성 가이드 (v0.3.0)
+# Evidence 작성 가이드 (v0.3.1)
 
 > `knowledge/evidence.md` 작성 방법 및 문헌 관리 워크플로우
 
@@ -104,7 +104,7 @@ PubMed 검색 등으로 논문을 찾아 등록하는 경우:
 ```markdown
 ### [번호] 첫저자 et al., 연도
 - **Citation:** 전체 서지정보 (저자, 제목, 저널, 연도, 권호, 페이지)
-- **Evidence ID:** author_year_keyword
+- **Evidence ID:** author_year (선택적 _keyword 접미사 허용, 예: kim_2020_fusion)
 - **DOI:** 10.xxxx/xxxxx
 - **PMID:** xxxxxxxx
 - **PDF:** knowledge/pdf/파일명.pdf (또는 "No PDF - abstract only")

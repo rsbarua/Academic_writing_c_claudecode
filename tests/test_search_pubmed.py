@@ -160,5 +160,54 @@ class GuessStudyDesignLadderTests(unittest.TestCase):
         )
 
 
+class EvidenceIdSlugTests(unittest.TestCase):
+    """Generated ids must satisfy check_citations.EVID_RE ([A-Za-z0-9_.-])."""
+
+    def setUp(self) -> None:
+        self.module = load_module()
+
+    def test_slugify_collapses_apostrophes_spaces_and_non_ascii(self) -> None:
+        self.assertEqual(self.module.slugify("O'Brien"), "o_brien")
+        self.assertEqual(self.module.slugify("van der Berg"), "van_der_berg")
+        self.assertEqual(self.module.slugify("Müller"), "muller")
+
+    def test_evidence_entry_id_and_pdf_path_use_slug(self) -> None:
+        article = {
+            "first_author": "O'Brien",
+            "authors": ["O'Brien J"],
+            "title": "Apostrophe surname.",
+            "journal_abbr": "Spine",
+            "journal": "Spine",
+            "year": "2021",
+            "volume": "",
+            "issue": "",
+            "pages": "",
+            "doi": "",
+            "pmid": "1",
+            "pub_types": [],
+            "abstract": "",
+        }
+        entry = self.module.format_evidence_entry(article, 1)
+        self.assertIn("- **Evidence ID:** o_brien_2021", entry)
+        self.assertIn("knowledge/pdf/o_brien_2021_KEYWORD.pdf", entry)
+        self.assertIn("### [1] O'Brien et al., 2021", entry)
+
+    def test_first_author_is_full_last_name(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        xml = (
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList>"
+            "<Author><LastName>van der Berg</LastName><Initials>A</Initials></Author>"
+            "<Author><LastName>Smith</LastName><Initials>B</Initials></Author>"
+            "</AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        article = self.module._parse_article(ET.fromstring(xml))
+        self.assertEqual(article["first_author"], "van der Berg")
+        self.assertEqual(article["authors"], ["van der Berg A", "Smith B"])
+        entry = self.module.format_evidence_entry({**article, "year": "2021"}, 1)
+        self.assertIn("- **Evidence ID:** van_der_berg_2021", entry)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -32,8 +32,9 @@ from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = Path(__file__).resolve().parent
-# author_year id -> (author, year); supports a trailing disambiguation letter (2020a).
-ID_AUTHOR_YEAR_RE = re.compile(r"^(.*?)_((?:19|20)\d{2}[a-z]?)$")
+# author_year[_keyword] id -> (author, year); supports a trailing disambiguation
+# letter (2020a) and an optional descriptive suffix (kim_2020_fusion).
+ID_AUTHOR_YEAR_RE = re.compile(r"^(.*?)_((?:19|20)\d{2}[a-z]?)(?:_.*)?$")
 
 
 def _load_sibling(name: str):

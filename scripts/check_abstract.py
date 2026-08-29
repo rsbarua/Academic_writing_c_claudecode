@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import NamedTuple
 
@@ -58,10 +59,21 @@ class AbstractCheckResult(NamedTuple):
 
 
 def body_supports(abstract_token, body_tokens) -> bool:
-    """True if any body number equals the abstract number at the abstract's precision."""
-    target = round(abstract_token.value, abstract_token.decimals)
+    """True if any body number equals the abstract number at the abstract's precision.
+
+    Rounds via Decimal on the printed value rather than float round(): binary
+    2.675 sits just below the tie, so round(2.675, 2) == 2.67 and an abstract
+    "2.68" derived from a body "2.675" would be a false mismatch. Both half-up
+    (most stats packages) and half-even (R/IEEE) tie-breaking are accepted.
+    """
+    quantum = Decimal(10) ** -abstract_token.decimals
+    target = Decimal(str(abstract_token.value)).quantize(quantum, rounding=ROUND_HALF_UP)
     for body in body_tokens:
-        if round(body.value, abstract_token.decimals) == target:
+        value = Decimal(str(body.value))
+        if any(
+            value.quantize(quantum, rounding=mode) == target
+            for mode in (ROUND_HALF_UP, ROUND_HALF_EVEN)
+        ):
             return True
     return False
 

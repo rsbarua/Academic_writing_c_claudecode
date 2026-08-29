@@ -19,7 +19,8 @@ Detection scope (v1, documented limits): tokens of 2-6 consecutive capitals,
 optionally with a numeric suffix (SF-36) or lowercase plural s (ODIs).
 Mixed-case abbreviations (mJOA, tDCS) are not detected. A built-in allowlist
 covers statistical/common abbreviations that need no definition (CI, SD, OR,
-HR, ...); extend with --allow.
+HR, ...); extend with --allow. An allowlisted stem also covers its numeric
+suffix forms (COVID allows COVID-19).
 
 Advisory by default (exit 0). --strict exits non-zero on UNDEFINED /
 DEFINED_AFTER_USE / REDEFINED (SINGLE_USE never blocks).
@@ -96,12 +97,17 @@ def blank_non_prose(text: str) -> str:
     return "\n".join(lines)
 
 
+def is_allowed(abbrev: str, allow: set[str]) -> bool:
+    """Allowlist match on the token or its stem: "COVID" also allows COVID-19."""
+    return abbrev in allow or abbrev.split("-", 1)[0] in allow
+
+
 def find_occurrences(artifact: Path, allow: set[str]) -> list[Occurrence]:
     text = blank_non_prose(artifact.read_text(encoding="utf-8"))
     occurrences: list[Occurrence] = []
     for match in ABBR_RE.finditer(text):
         abbrev = match.group(1)
-        if abbrev in allow:
+        if is_allowed(abbrev, allow):
             continue
         line = text.count("\n", 0, match.start()) + 1
         before = text[: match.start()].rstrip()

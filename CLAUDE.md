@@ -1,4 +1,4 @@
-# Academic Paper Writing Project (v1.6.3)
+# Academic Paper Writing Project (v1.6.4)
 
 ## Research Configuration
 **Topic:** [INSERT YOUR SPECIFIC RESEARCH TOPIC]
@@ -92,7 +92,7 @@ project/
 │   ├── check_crossrefs.py        # Table/Figure 본문 참조 ↔ 실존 대조 (broken ref·미인용·순서; advisory)
 │   ├── check_abbreviations.py    # 약어 첫 사용 정의 검사 (abstract/본문 scope 분리; advisory)
 │   ├── check_response_coverage.py # 리뷰어 코멘트 전수 응답 확인 (Phase 8; ghost-revision 보완)
-│   └── hooks/                    # 강제 훅 (enforce_gates, session_contract, lint_on_edit, style_intent)
+│   └── hooks/                    # 강제 훅 (enforce_gates, session_contract, lint_on_edit, style_intent) + run.sh 런처(py→python3 자동 선택)
 ├── tests/                        # pytest suite for the verification scripts
 │   └── test_*.py                 # Run: pytest  (python-docx required, see requirements.txt)
 ├── .github/workflows/tests.yml   # CI: pytest on push to main + PRs (Python 3.10/3.11/3.12)
@@ -335,6 +335,7 @@ These must match across **Abstract ↔ Methods ↔ Results ↔ Tables**:
 3. 변수 정의 (primary/secondary/exploratory endpoints)
 4. 통계 검정법 선택 및 근거
 5. 유의수준 및 다중비교 보정 계획
+6. 문서 말미 승인 체크박스 `- [ ] 사용자 승인 완료` — 사용자가 `[x]`로 체크해야 훅이 분석 스크립트 생성을 허용(체크박스 부재·미체크 = 미승인)
 
 ### 8. Draft Plan Mandatory (원고 구성 계획 필수)
 
@@ -391,7 +392,7 @@ These must match across **Abstract ↔ Methods ↔ Results ↔ Tables**:
 - **Verifier 모델:** Opus 기본. Opus 불가 시 또는 사용자 요청 시 다른 모델(예: GPT-5.5) 허용.
 - **인용 grounding:** 초안에서 모든 인용은 `[EVID:author_year]` 태그로 표기 (Phase 7에서 저널 형식 변환).
 - **수치 grounding:** 원고 결과 수치는 `results/*.csv`에 존재하는 값만 사용.
-- **Hook 강제 (결정적):** `.claude/settings.json`의 PreToolUse 훅(`Write/Edit/MultiEdit`)이 plan-first를 강제 — 완료·승인된 `draft_plan.md` 없이 섹션 작성, 완료·승인된 `analysis_plan.md` 없이 분석 스크립트 생성을 **차단**한다(Rule 7·8, fail-open). 미완성 템플릿/미체크 승인 plan은 plan으로 인정하지 않는다. SessionStart 훅이 본 계약(+활성 Style Spec)을 매 세션 주입. PostToolUse 훅(`lint_on_edit.py`)이 draft 편집마다 용어·표기 lint를 표면화하고, UserPromptSubmit 훅(`style_intent.py`)이 "학술적으로 바꿔줘" 류 입력에 style-pass protocol을 자동 주입한다. 결정적 검증은 `/verify`(`scripts/verify_all.py`)로 일괄 실행.
+- **Hook 강제 (결정적):** `.claude/settings.json`의 PreToolUse 훅(`Write/Edit/MultiEdit`)이 plan-first를 강제 — 완료·승인된 `draft_plan.md` 없이 섹션 작성, 완료·승인된 `analysis_plan.md` 없이 분석 스크립트 생성을 **차단**한다(Rule 7·8, fail-open). 미완성 템플릿/미체크 승인 plan은 plan으로 인정하지 않는다 — 승인 체크박스(`- [x] 사용자 승인 완료`)가 **없어도** 미승인. 훅은 `scripts/hooks/run.sh` 런처로 실행(`py` 있으면 py, 없으면 `python3` — macOS/Linux에서도 강제 유지). SessionStart 훅이 본 계약(+활성 Style Spec)을 매 세션 주입. PostToolUse 훅(`lint_on_edit.py`)이 draft 편집마다 용어·표기 lint를 표면화하고, UserPromptSubmit 훅(`style_intent.py`)이 "학술적으로 바꿔줘" 류 입력에 style-pass protocol을 자동 주입한다. 결정적 검증은 `/verify`(`scripts/verify_all.py`)로 일괄 실행.
 
 **게이트 배치·병렬·freshness:** Phase별 게이트(3 Claim→Citation 사전검증 · 4 섹션 게이트 · 6 경량 · 8 응답 게이트), 병렬 검출, freshness 해시 규칙은 `docs/verification_protocol.md` §7/§3.1/§6 참조. PASS 시 산출물 sha256를 `provenance:`에 기록하고, 산출물이 바뀌면 stale로 보고 재검증(`check_gate.py --verify-hash`). **결정적 차원(citation/numbers/revision_claims)은 `check_gate.py --cross-check`로 원장의 `PASS`를 정본 checker 즉석 재실행과 대조** — 안 돌리고 적은 가짜 PASS나 stale PASS를 모순으로 차단(소스 미도달 시 loud FAIL).
 

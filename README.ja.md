@@ -6,7 +6,7 @@ Claude AI を活用した医学学術論文執筆のための体系的なワー�
 
 ## バージョン
 
-**v1.6.3** (2026-07-02)
+**v1.6.4** (2026-08-30)
 
 [![tests](https://github.com/grotyx/Academic_writing_c_claudecode/actions/workflows/tests.yml/badge.svg)](https://github.com/grotyx/Academic_writing_c_claudecode/actions/workflows/tests.yml)
 
@@ -113,7 +113,7 @@ project/
 │   ├── critical_review.py        # OpenRouter マルチモデル敵対的レビュー呼び出し
 │   ├── critical_models.txt       # OpenRouter モデルリスト（外部化）
 │   ├── critical_prompts/         # 敵対的プロンプト単一正本（manuscript.txt, response.txt）
-│   └── hooks/                    # プロセス強制 hooks（enforce_gates, session_contract, lint_on_edit, style_intent）
+│   └── hooks/                    # プロセス強制 hooks（enforce_gates, session_contract, lint_on_edit, style_intent）+ run.sh ランチャー（py→python3 自動選択）
 ├── tests/                        # 検証スクリプト用 pytest スイート
 ├── results/                      # 分析結果
 ├── drafts/                       # 原稿セクション、表、図
@@ -331,6 +331,17 @@ Copyright (c) 2026 Sang-Min Park, Seoul National University Bundang Hospital
 ---
 
 ## 変更履歴
+
+### v1.6.4 (2026-08-30)
+
+**ハーネス全体レビュー（Claude Fable）— 欠陥 16 件修正、回帰テスト 33 件**
+
+- **ゲートの false-PASS / false-FAIL / クラッシュ（HIGH）:** `check_citations.py` が不正・非 ASCII の `[EVID:…]` タグ（`o'brien_2021`、`müller_2020`）をトークン 0 件で PASS させていたのを FAIL に；`search_pubmed.py` は生成 id を slugify し姓全体を使用。`check_numbers.py`：results CSV 行の余剰フィールドでクラッシュしない；原稿の `p<0.001` が CSV セル `<0.001` と一致（同等またはより緩い bound）；大文字 `P<0.05` も p 比較として認識；`L4-5`・`C5-6`・`COVID-19`・`ICD-10` の接尾数字は構造表記として除外；ROUND_HALF_UP も許容（2.675 → 2.68）。
+- **強制 hook が実際に有効に:** hook を新設 `scripts/hooks/run.sh`（`py` があれば py、無ければ `python3`）経由で実行 — 従来 macOS/Linux では全 hook が exit 127 となり Rule 7・8 の強制が無音で無効だった。`enforce_gates.py` は承認チェックボックスが**存在しない** plan も未承認扱い（Rule 9 の文言が実際には強制されていなかった）。
+- **`check_gate.py`:** artifact パスをスラッシュ非依存で比較（`drafts\05_results.md` == `drafts/05_results.md`、`--verify-hash`/`--cross-check` 含む）；複数ブロックの gate ファイルを `artifact:` 単位で分割し `--artifact` で選択 — 前ブロックの FAIL が後ブロックの PASS に隠れない；複数ブロックで `--artifact` 無しなら loud FAIL。`_TEMPLATE.GATE.md` に記載。
+- **`check_response_coverage.py`:** 引用形の角括弧（`[12]`、`[3-5]`、`[EVID:id]`）を placeholder として扱わない — 文献引用付きの反論が通る。
+- **細部:** `check_abstract.py` half-up 丸め；`format_references.py` の author-year モードで `author_year_keyword` id を許容（`evidence_guide.md` v0.3.1 と整合）；`compile_response_docx.py` が "# Response to Reviewers" を "Response: to Reviewers" に壊さない；`check_citations`/`check_numbers`/`check_coverage` でコードフェンス後の行番号が正確；`check_coverage.py` は markdown 表の行を個別集計；`check_abbreviations.py` の allowlist が `COVID-19` を語幹で一致；`lint_manuscript.py` はイタリック `*p* = .02` を捕捉し "group = 30" は誤検出しない。
+- テスト 262 → 295。
 
 ### v1.6.3 (2026-07-02)
 

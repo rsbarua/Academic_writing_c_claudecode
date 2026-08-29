@@ -128,6 +128,16 @@ class AbbrevDetectionTests(unittest.TestCase):
             )
             self.assertEqual(issues, [])
 
+    def test_allowlist_stem_covers_numeric_suffix(self) -> None:
+        # ABBR_RE keeps the numeric suffix ("COVID-19"), so the bare "COVID"
+        # allowlist entry used to miss it and report ABBREV_UNDEFINED.
+        with tempfile.TemporaryDirectory() as tmp:
+            issues = audit_text(
+                self.module, Path(tmp),
+                "COVID-19 disrupted follow-up. COVID-19 cases were excluded.\n",
+            )
+            self.assertEqual(issues, [])
+
 
 class AbbrevCliTests(unittest.TestCase):
     def _run(self, args: list[str]) -> subprocess.CompletedProcess:

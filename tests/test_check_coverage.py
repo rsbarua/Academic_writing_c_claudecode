@@ -158,6 +158,50 @@ class CoverageTests(unittest.TestCase):
             self.assertNotIn("waste", out.lower())
             self.assertIn("valid choice", out)
 
+    def test_over_citation_line_survives_code_fence_and_sentence_gap(self) -> None:
+        # Fences used to be stripped without preserving line count, and
+        # SENTENCE_RE starts at the whitespace after the previous period -- both
+        # shifted the reported line. The padded sentence here sits on line 9.
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            intro = (
+                "First claim [EVID:smith_2020].\n\n\n"
+                "```\ncode line 1\ncode line 2\n```\n\n"
+                "Padded [EVID:smith_2020][EVID:lee_2021][EVID:park_2022]"
+                "[EVID:smith_2020][EVID:lee_2021].\n"
+            )
+            ev, art, _ = self._setup(tmp, intro=intro)
+            result = module.audit([art], evidence_path=ev)
+            self.assertEqual([(oc.line, oc.count) for oc in result.over_citations], [(9, 5)])
+
+    def test_table_rows_are_not_fused_into_one_sentence(self) -> None:
+        # Table rows carry no terminal period, so a five-row table with one
+        # citation per row used to count as a single 6-citation "sentence".
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            intro = (
+                "| Study | Finding |\n|---|---|\n"
+                "| Smith | fusion [EVID:smith_2020] |\n"
+                "| Lee | pain [EVID:lee_2021] |\n"
+                "| Park | cost [EVID:park_2022] |\n"
+                "| Smith | again [EVID:smith_2020] |\n"
+                "| Lee | again [EVID:lee_2021] |\n"
+                "Prose after the table [EVID:smith_2020].\n"
+            )
+            ev, art, _ = self._setup(tmp, intro=intro)
+            self.assertEqual(module.audit([art], evidence_path=ev).over_citations, [])
+            # A single padded row is still its own unit and is flagged on its line.
+            art.write_text(
+                intro
+                + "| Padded | [EVID:smith_2020][EVID:lee_2021][EVID:park_2022]"
+                "[EVID:smith_2020][EVID:lee_2021] |\n",
+                encoding="utf-8",
+            )
+            flagged = module.audit([art], evidence_path=ev).over_citations
+            self.assertEqual([(oc.line, oc.count) for oc in flagged], [(9, 5)])
+
 
 class CoverageCliExitTests(unittest.TestCase):
     """The --fail-on-* flags ARE the enforcement contract -- verify their exit codes."""

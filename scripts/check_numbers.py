@@ -13,6 +13,7 @@ import argparse
 import csv
 import math
 import re
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import NamedTuple
 
@@ -24,7 +25,7 @@ DATE_RE = re.compile(r"\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 NUMBER_RE = re.compile(
     r"(?<![A-Za-z0-9_])"
-    r"(?:(?P<p>\*?p\*?)\s*(?P<comp><=|>=|<|>|=)\s*)?"
+    r"(?:(?P<p>\*?[pP]\*?)\s*(?P<comp><=|>=|<|>|=)\s*)?"
     r"(?P<num>[-+]?(?:\d+(?:,\d{3})*(?:\.\d+)?|\.\d+))"
     r"(?P<pct>%)?"
 )
@@ -32,6 +33,8 @@ P_VALUE_COLUMNS = frozenset(
     {"p", "p value", "p_value", "p-value", "pval", "pvalue", "p val"}
 )
 P_VALUE_TEXT_RE = re.compile(r"\b\*?p\*?\s*(?:<=|>=|<|>|=)", flags=re.IGNORECASE)
+# A CSV cell that is itself a bound, e.g. "<0.001" or "p < 0.001".
+RESULT_BOUND_RE = re.compile(r"^\s*(?:\*?p\*?\s*)?(?P<comp><=|>=|<|>)\s*", flags=re.IGNORECASE)
 STRUCTURAL_LABEL_RE = re.compile(
     r"\b(?:Table|Figure|Fig\.?|Section|Phase|Round|Reviewer|Comment|Line|Page|REV)\s*$",
     flags=re.IGNORECASE,
@@ -74,8 +77,10 @@ class NumberCheckResult(NamedTuple):
 
 
 def strip_ignored_text(text: str) -> str:
-    text = FENCE_RE.sub("", text)
-    text = HTML_COMMENT_RE.sub("", text)
+    # Blank fences and HTML comments keeping their newlines so line numbers
+    # reported after them stay correct.
+    text = FENCE_RE.sub(lambda match: "\n" * match.group().count("\n"), text)
+    text = HTML_COMMENT_RE.sub(lambda match: "\n" * match.group().count("\n"), text)
     # Blank inline code spans and dates length-preservingly so example tokens
     # inside them are ignored without shifting line numbers or column offsets.
     text = INLINE_CODE_RE.sub(lambda match: " " * len(match.group()), text)
@@ -106,7 +111,9 @@ def load_result_numbers(results_dir: Path) -> list[ResultNumber]:
             reader = csv.DictReader(handle)
             for row_index, row in enumerate(reader, start=2):
                 for column, value in row.items():
-                    if value is None:
+                    # csv.DictReader stores surplus fields of a ragged row as a
+                    # list under key None; skip them instead of crashing.
+                    if value is None or column is None:
                         continue
                     for number in extract_numbers_from_text(value):
                         numbers.append(
@@ -130,6 +137,11 @@ def is_structural_number(
     before = line[:start]
     after = line[start + len(token) :]
     if value.is_integer() and 1900 <= int(value) <= 2099:
+        return True
+
+    # Trailing part of a hyphenated label (e.g. "L4-5", "C5-6", "COVID-19",
+    # "ICD-10"): the number belongs to the identifier, not to a result.
+    if re.search(r"[A-Za-z]\d*[-–]$", before):
         return True
 
     # Confidence-level percentages (e.g. "95% CI", "95 % confidence interval")
@@ -196,10 +208,33 @@ def result_is_p_value(result_number: ResultNumber) -> bool:
     return bool(P_VALUE_TEXT_RE.search(result_number.raw))
 
 
+def result_bound_comparator(result_number: ResultNumber) -> str:
+    match = RESULT_BOUND_RE.match(result_number.raw)
+    return match.group("comp") if match else ""
+
+
+def rounded_candidates(value: float, decimals: int) -> tuple[float, float]:
+    # round() is banker's rounding on the binary float (2.675 -> 2.67) while
+    # manuscripts round half up on the printed value (2.675 -> 2.68). Accept
+    # either so a correctly rounded number is never rejected.
+    half_up = Decimal(str(value)).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
+    return round(value, decimals), float(half_up)
+
+
 def matches_number(token: NumberToken, result_number: ResultNumber) -> bool:
     if token.is_p_value and token.comparator:
         if not result_is_p_value(result_number):
             return False
+        bound = result_bound_comparator(result_number)
+        if bound and token.comparator != "=":
+            # The CSV cell is itself a bound (e.g. "<0.001"). The manuscript may
+            # restate it or a looser bound in the same direction, never a
+            # tighter one or the opposite direction.
+            if bound[0] != token.comparator[0]:
+                return False
+            if bound[0] == "<":
+                return result_number.value <= token.value
+            return result_number.value >= token.value
         if token.comparator == "<":
             return result_number.value < token.value
         if token.comparator == "<=":
@@ -212,8 +247,10 @@ def matches_number(token: NumberToken, result_number: ResultNumber) -> bool:
     if math.isclose(token.value, result_number.value, rel_tol=0, abs_tol=1e-12):
         return True
 
-    rounded = round(result_number.value, token.decimals)
-    return math.isclose(token.value, rounded, rel_tol=0, abs_tol=1e-12)
+    return any(
+        math.isclose(token.value, rounded, rel_tol=0, abs_tol=1e-12)
+        for rounded in rounded_candidates(result_number.value, token.decimals)
+    )
 
 
 def closest_result_number(token: NumberToken, result_numbers: list[ResultNumber]) -> str:

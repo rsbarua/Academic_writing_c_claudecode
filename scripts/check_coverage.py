@@ -63,7 +63,8 @@ _cc = _load_sibling("check_citations")
 parse_evidence_entries = _cc.parse_evidence_entries
 iter_evid_tokens = _cc.iter_evid_tokens
 EVID_RE = _cc.EVID_RE
-strip_code_fences = _cc.strip_code_fences
+FENCE_RE = _cc.FENCE_RE
+INLINE_CODE_RE = _cc.INLINE_CODE_RE
 
 
 class OverCitation(NamedTuple):
@@ -83,17 +84,42 @@ class CoverageResult(NamedTuple):
     unrealized: list[str]  # planned in draft_plan.md but uncited in the sections (neutral)
 
 
+def blank_code(text: str) -> str:
+    """Blank code fences and inline code, preserving line numbers (cf. check_crossrefs)."""
+    text = FENCE_RE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+    return INLINE_CODE_RE.sub(lambda match: " " * len(match.group(0)), text)
+
+
 def find_over_citations(artifact: Path, max_per_sentence: int) -> list[OverCitation]:
     """Flag sentences carrying more than `max_per_sentence` [EVID:id] citations."""
-    text = strip_code_fences(artifact.read_text(encoding="utf-8"))
+    text = blank_code(artifact.read_text(encoding="utf-8"))
     hits: list[OverCitation] = []
-    for match in SENTENCE_RE.finditer(text):
+
+    # Markdown table rows have no terminal period, so SENTENCE_RE would fuse a
+    # whole table into one "sentence". Each row is its own unit instead, and the
+    # rows are blanked (line count preserved) before the prose pass.
+    prose_lines: list[str] = []
+    for line_no, line in enumerate(text.split("\n"), start=1):
+        if not line.lstrip().startswith("|"):
+            prose_lines.append(line)
+            continue
+        prose_lines.append("")
+        count = len(EVID_RE.findall(line))
+        if count > max_per_sentence:
+            hits.append(OverCitation(str(artifact), line_no, count, " ".join(line.split())[:90]))
+
+    prose = "\n".join(prose_lines)
+    for match in SENTENCE_RE.finditer(prose):
         sentence = match.group(0)
         count = len(EVID_RE.findall(sentence))
         if count > max_per_sentence:
-            line = text.count("\n", 0, match.start()) + 1
+            # SENTENCE_RE swallows the whitespace after the previous sentence's
+            # period, so anchor the line on the first non-blank character.
+            start = match.start() + (len(sentence) - len(sentence.lstrip()))
+            line = prose.count("\n", 0, start) + 1
             snippet = " ".join(sentence.split())[:90]
             hits.append(OverCitation(str(artifact), line, count, snippet))
+    hits.sort(key=lambda hit: hit.line)
     return hits
 
 

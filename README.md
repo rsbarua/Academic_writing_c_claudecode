@@ -6,7 +6,7 @@ A structured workflow system for academic medical paper writing using Claude AI.
 
 ## Version
 
-**v1.6.3** (2026-07-02)
+**v1.6.4** (2026-08-30)
 
 [![tests](https://github.com/grotyx/Academic_writing_c_claudecode/actions/workflows/tests.yml/badge.svg)](https://github.com/grotyx/Academic_writing_c_claudecode/actions/workflows/tests.yml)
 
@@ -120,7 +120,7 @@ project/
 │   ├── critical_review.py        # OpenRouter multi-model adversarial caller
 │   ├── critical_models.txt       # OpenRouter model list (externalized)
 │   ├── critical_prompts/         # Adversarial prompt single-source (manuscript.txt, response.txt)
-│   └── hooks/                    # Enforcement hooks (enforce_gates, session_contract, lint_on_edit, style_intent)
+│   └── hooks/                    # Enforcement hooks (enforce_gates, session_contract, lint_on_edit, style_intent) + run.sh launcher (py → python3 fallback)
 ├── tests/                        # Pytest suite for the verification scripts
 ├── results/                      # Analysis outputs
 ├── drafts/                       # Manuscript sections, tables & figures
@@ -366,6 +366,17 @@ Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
 ---
 
 ## Changelog
+
+### v1.6.4 (2026-08-30)
+
+**Full harness review (Claude Fable) — 16 defects fixed, 33 regression tests**
+
+- **Gate false-PASS / false-FAIL / crash (HIGH):** `check_citations.py` now FAILs malformed or non-ASCII `[EVID:…]` tags (`o'brien_2021`, `müller_2020`) instead of silently reporting PASS with 0 tokens; `search_pubmed.py` slugifies generated ids and uses the full last name. `check_numbers.py`: a ragged results-CSV row no longer crashes the gate; manuscript `p<0.001` matches a CSV cell `<0.001` (same or looser bound); uppercase `P<0.05` is a p-comparison; spine-level / code-style suffixes (`L4-5`, `C5-6`, `COVID-19`, `ICD-10`) are structural, not results; ROUND_HALF_UP accepted alongside banker's rounding (2.675 → 2.68).
+- **Enforcement actually on across platforms:** hooks run via new `scripts/hooks/run.sh` (`py` if present, else `python3`) — previously every hook exited 127 on macOS/Linux and Rule 7/8 was silently off. `enforce_gates.py` now also rejects a plan with *no* approval checkbox (Rule 9 wording was not enforced).
+- **`check_gate.py`:** artifact paths compared slash-insensitively (`drafts\05_results.md` == `drafts/05_results.md`, incl. `--verify-hash` / `--cross-check`); multi-block gate files are split per `artifact:` and `--artifact` selects the block — an earlier block's FAIL can no longer be masked by a later PASS; multiple blocks without `--artifact` fail loudly. `_TEMPLATE.GATE.md` documents this.
+- **`check_response_coverage.py`:** citation-shaped brackets (`[12]`, `[3-5]`, `[EVID:id]`) are no longer treated as placeholders — rebuttals citing literature pass.
+- **Minor:** `check_abstract.py` half-up rounding; `format_references.py` accepts `author_year_keyword` ids in author-year mode (docs aligned: `evidence_guide.md` v0.3.1); `compile_response_docx.py` no longer rewrites "# Response to Reviewers" as "Response: to Reviewers"; line numbers after code fences correct in `check_citations` / `check_numbers` / `check_coverage`; `check_coverage.py` counts markdown-table rows separately; `check_abbreviations.py` allowlist matches `COVID-19` via stem; `lint_manuscript.py` catches italic `*p* = .02` and stops flagging "group = 30".
+- Tests 262 → 295.
 
 ### v1.6.3 (2026-07-02)
 

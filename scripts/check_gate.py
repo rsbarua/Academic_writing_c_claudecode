@@ -60,6 +60,24 @@ def normalize_status(value: str) -> str:
     return value.strip().upper()
 
 
+def normalize_path(value: str) -> str:
+    """Make artifact paths comparable across platforms.
+
+    The documented Windows commands pass `drafts\\05_results.md` while ledgers
+    record `drafts/05_results.md`; both must mean the same artifact. Backslashes
+    become "/", and a leading "./" is dropped.
+    """
+    value = value.strip().replace("\\", "/")
+    while value.startswith("./"):
+        value = value[2:]
+    return value
+
+
+def normalize_path_obj(path: Path) -> Path:
+    """Path form of normalize_path (so a backslash path resolves on POSIX too)."""
+    return Path(normalize_path(str(path)))
+
+
 def strip_inline_comment(value: str) -> str:
     # Gate fields may carry a trailing "# ..." annotation, e.g.
     # "status: PASS  # PASS | FAIL" or "round: 2  # max 2 attempts".
@@ -161,6 +179,35 @@ def parse_gate_entry(text: str) -> GateEntry:
     return GateEntry(fields=fields, checks=checks, provenance=provenance)
 
 
+def split_gate_blocks(text: str) -> list[str]:
+    """Split a ledger file into per-artifact blocks.
+
+    A block ends at a `---` separator line, or where the next top-level
+    `artifact:` key begins (every block records exactly one artifact). Without
+    this a file holding two artifact blocks flattens into one entry: later keys
+    overwrite earlier ones and the checks merge, so block 1's `citation: FAIL`
+    is masked by block 2's `citation: PASS`.
+    """
+    blocks: list[list[str]] = [[]]
+    seen_artifact = False
+    for raw_line in text.splitlines():
+        line = raw_line.lstrip("\ufeff")
+        top_match = FIELD_RE.match(line.rstrip()) if not line.startswith((" ", "\t")) else None
+        is_artifact = bool(top_match and normalize_key(top_match.group(1)) == "artifact")
+        if line.strip() == "---" or (is_artifact and seen_artifact):
+            blocks.append([])
+            seen_artifact = False
+        seen_artifact = seen_artifact or is_artifact
+        blocks[-1].append(line)
+    return ["\n".join(block) for block in blocks]
+
+
+def parse_gate_entries(text: str) -> list[GateEntry]:
+    """Parse every artifact block in a ledger (empty blocks dropped)."""
+    entries = [parse_gate_entry(block) for block in split_gate_blocks(text)]
+    return [entry for entry in entries if entry.fields or entry.checks or entry.provenance]
+
+
 def phase_code_from_path(gate_path: Path) -> str:
     stem = gate_path.name
     if stem.endswith(".GATE.md"):
@@ -197,7 +244,48 @@ def check_gate(
             None,
         )
 
-    entry = parse_gate_entry(gate_path.read_text(encoding="utf-8"))
+    entries = parse_gate_entries(gate_path.read_text(encoding="utf-8"))
+    recorded_artifacts = [entry.fields.get("artifact", "") for entry in entries]
+    if artifact is not None:
+        wanted = normalize_path(artifact)
+        matching = [
+            entry for entry in entries
+            if normalize_path(entry.fields.get("artifact", "")) == wanted
+        ]
+        if len(matching) > 1:
+            return GateCheckResult(
+                False,
+                [
+                    GateIssue(
+                        gate_path,
+                        "artifact",
+                        f"{len(matching)} blocks record artifact {artifact}",
+                        "Keep exactly one block per artifact in the gate ledger.",
+                    )
+                ],
+                None,
+            )
+        # No match: fall through to the single-block path so the mismatch is
+        # reported alongside whatever else the (first) block gets wrong.
+        entry = matching[0] if matching else (entries[0] if entries else GateEntry({}, {}, {}))
+    elif len(entries) > 1:
+        return GateCheckResult(
+            False,
+            [
+                GateIssue(
+                    gate_path,
+                    "artifact",
+                    f"gate records {len(entries)} artifact blocks "
+                    f"({', '.join(a or '<missing>' for a in recorded_artifacts)}); "
+                    "cannot tell which one to verify",
+                    "Pass --artifact <path> to select the block to check.",
+                )
+            ],
+            None,
+        )
+    else:
+        entry = entries[0] if entries else GateEntry({}, {}, {})
+
     status = normalize_status(entry.fields.get("status", ""))
     if status != "PASS":
         reason = f"status is {status or 'missing'}"
@@ -212,12 +300,13 @@ def check_gate(
 
     if artifact is not None:
         recorded_artifact = entry.fields.get("artifact", "")
-        if recorded_artifact != artifact:
+        if normalize_path(recorded_artifact) != normalize_path(artifact):
+            found = ", ".join(a or "<missing>" for a in recorded_artifacts) or "<missing>"
             failures.append(
                 GateIssue(
                     gate_path,
                     "artifact",
-                    f"artifact mismatch: expected {artifact}, found {recorded_artifact or '<missing>'}",
+                    f"artifact mismatch: expected {artifact}, found {found}",
                     "Use the gate file for the requested artifact or correct the artifact field.",
                 )
             )
@@ -280,7 +369,7 @@ def check_gate(
             )
             continue
 
-        resolved = file_path
+        resolved = normalize_path_obj(file_path)
         if not resolved.is_absolute():
             resolved = (base_dir or ROOT) / resolved
         if not resolved.is_file():
@@ -328,6 +417,7 @@ def check_gate(
     cross_verified: list[str] = []
     for label, art_path in cross_checks or []:
         key = normalize_key(label)
+        art_path = normalize_path_obj(art_path)
         if key not in CROSS_CHECK_LABELS:
             failures.append(
                 GateIssue(

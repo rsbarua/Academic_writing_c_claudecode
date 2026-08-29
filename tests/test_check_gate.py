@@ -110,6 +110,20 @@ class CheckGateTests(unittest.TestCase):
             self.assertFalse(result.passed)
             self.assertIn("artifact mismatch", result.failures[0].reason)
 
+    def test_check_gate_accepts_backslash_artifact_path(self) -> None:
+        # Regression: the documented Windows commands pass drafts\05_results.md
+        # while the ledger records drafts/05_results.md; exact string comparison
+        # reported a spurious "artifact mismatch".
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            gate_path = Path(tmp) / "phase_04_draft.GATE.md"
+            gate_path.write_text(PASS_GATE, encoding="utf-8")
+
+            for requested in ("drafts\\05_results.md", "./drafts/05_results.md", ".\\drafts\\05_results.md"):
+                result = module.check_gate(gate_path, artifact=requested)
+                self.assertTrue(result.passed, (requested, [f.reason for f in result.failures]))
+
     def test_check_gate_passes_despite_inline_comments(self) -> None:
         # Regression: the documented template keeps inline "# ..." comments on
         # status/round. The parser must strip them, not read "PASS  # PASS | FAIL".
@@ -279,6 +293,30 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(entry.fields["round"], "1")
         self.assertNotIn("artifact", entry.checks)
         self.assertNotIn("constraint", entry.provenance)
+
+    def test_verify_hash_accepts_backslash_path(self) -> None:
+        # Regression: --verify-hash artifact=drafts\05_results.md (documented
+        # Windows form) must resolve to the same file on every platform.
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "drafts").mkdir()
+            artifact = base / "drafts" / "05_results.md"
+            artifact.write_text("primary outcome 54.3\n", encoding="utf-8")
+            gate_path = base / "phase_04_draft.GATE.md"
+            gate_path.write_text(
+                self._gate_with_provenance(module.sha256_file(artifact)), encoding="utf-8"
+            )
+
+            result = module.check_gate(
+                gate_path,
+                verify_hashes=[("artifact", Path("drafts\\05_results.md"))],
+                base_dir=base,
+            )
+
+            self.assertTrue(result.passed, [f.reason for f in result.failures])
+            self.assertEqual(result.verified, ("artifact",))
 
     def test_verify_hash_fails_when_file_missing(self) -> None:
         module = load_module()
@@ -532,6 +570,25 @@ class CrossCheckTests(unittest.TestCase):
             self.assertEqual(result.cross_verified, ("citation",))
             self.assertIn("cross_checked: citation", module.format_result(result, gate_path))
 
+    def test_cross_check_accepts_backslash_artifact_path(self) -> None:
+        # Regression: --cross-check citation=drafts\05_results.md (documented
+        # Windows form) must re-check the same file on every platform.
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._project(Path(tmp), section="Background is established [EVID:smith_2020].\n")
+            gate_path = base / "phase_04_draft.GATE.md"
+            gate_path.write_text(self._gate("PASS"), encoding="utf-8")
+
+            result = module.check_gate(
+                gate_path,
+                artifact="drafts\\05_results.md",
+                cross_checks=[("citation", Path("drafts\\05_results.md"))],
+                base_dir=base,
+            )
+
+            self.assertTrue(result.passed, [f.reason for f in result.failures])
+            self.assertEqual(result.cross_verified, ("citation",))
+
     def test_cross_check_catches_fabricated_pass(self) -> None:
         # Ledger claims citation PASS, but the section cites an EVID id that does
         # not exist -> live check FAILS -> the gate must catch the lie.
@@ -652,6 +709,119 @@ class CrossCheckTests(unittest.TestCase):
 
             self.assertFalse(result.passed)
             self.assertTrue(any("could not run live citation" in f.reason for f in result.failures))
+
+
+class MultiBlockTests(unittest.TestCase):
+    """One ledger file holding several artifact blocks must not merge them.
+
+    Regression: the parser flattened the whole file, so with two blocks the
+    later keys overwrote the earlier ones and the checks merged -- block 1's
+    `citation: FAIL` was masked by block 2's `citation: PASS`.
+    """
+
+    TWO_BLOCKS = (
+        "phase: Phase 4 - Draft Sections\n"
+        "artifact: drafts/05_results.md\n"
+        "status: FAIL\n"
+        "checks:\n"
+        "  constraint: PASS\n"
+        "  citation: FAIL\n"
+        "round: 1\n"
+        "\n"
+        "---\n"
+        "\n"
+        "phase: Phase 4 - Draft Sections\n"
+        "artifact: drafts/06_discussion.md\n"
+        "status: PASS\n"
+        "checks:\n"
+        "  constraint: PASS\n"
+        "  citation: PASS\n"
+        "round: 1\n"
+    )
+
+    def test_parse_gate_entries_splits_on_separator(self) -> None:
+        module = load_module()
+
+        entries = module.parse_gate_entries(self.TWO_BLOCKS)
+
+        self.assertEqual(
+            [entry.fields["artifact"] for entry in entries],
+            ["drafts/05_results.md", "drafts/06_discussion.md"],
+        )
+        self.assertEqual(entries[0].fields["status"], "FAIL")
+        self.assertEqual(entries[0].checks["citation"], "FAIL")
+        self.assertEqual(entries[1].fields["status"], "PASS")
+        self.assertEqual(entries[1].checks["citation"], "PASS")
+
+    def test_parse_gate_entries_splits_on_repeated_artifact_key(self) -> None:
+        # Blank-line-separated blocks without a `---` line must still split.
+        module = load_module()
+
+        entries = module.parse_gate_entries(self.TWO_BLOCKS.replace("---\n", ""))
+
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0].checks["citation"], "FAIL")
+        self.assertEqual(entries[1].checks["citation"], "PASS")
+
+    def test_parse_gate_entries_single_block_unchanged(self) -> None:
+        module = load_module()
+
+        entries = module.parse_gate_entries(PASS_GATE)
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].fields["artifact"], "drafts/05_results.md")
+        self.assertEqual(entries[0].checks["numbers"], "PASS")
+
+    def test_artifact_selects_block_and_other_block_fail_not_masked(self) -> None:
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            gate_path = Path(tmp) / "phase_04_draft.GATE.md"
+            gate_path.write_text(self.TWO_BLOCKS, encoding="utf-8")
+
+            passing = module.check_gate(
+                gate_path, required_checks=["citation"], artifact="drafts/06_discussion.md"
+            )
+            self.assertTrue(passing.passed, [f.reason for f in passing.failures])
+
+            failing = module.check_gate(
+                gate_path, required_checks=["citation"], artifact="drafts/05_results.md"
+            )
+            self.assertFalse(failing.passed)
+            reasons = [f.reason for f in failing.failures]
+            self.assertIn("status is FAIL", reasons)
+            self.assertIn("required check citation is FAIL", reasons)
+
+    def test_multiple_blocks_without_artifact_fail_loudly(self) -> None:
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            gate_path = Path(tmp) / "phase_04_draft.GATE.md"
+            gate_path.write_text(self.TWO_BLOCKS, encoding="utf-8")
+
+            result = module.check_gate(gate_path, required_checks=["citation"])
+
+            self.assertFalse(result.passed)
+            self.assertEqual(len(result.failures), 1)
+            self.assertIn("2 artifact blocks", result.failures[0].reason)
+            self.assertIn("--artifact", result.failures[0].required_action)
+            self.assertIn("GATE FAIL", module.format_result(result, gate_path))
+
+    def test_unknown_artifact_reports_all_recorded_blocks(self) -> None:
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            gate_path = Path(tmp) / "phase_04_draft.GATE.md"
+            gate_path.write_text(self.TWO_BLOCKS, encoding="utf-8")
+
+            result = module.check_gate(gate_path, artifact="drafts/03_introduction.md")
+
+            self.assertFalse(result.passed)
+            mismatch = [f for f in result.failures if f.field == "artifact"]
+            self.assertEqual(len(mismatch), 1)
+            self.assertIn("artifact mismatch", mismatch[0].reason)
+            self.assertIn("drafts/05_results.md", mismatch[0].reason)
+            self.assertIn("drafts/06_discussion.md", mismatch[0].reason)
 
 
 if __name__ == "__main__":

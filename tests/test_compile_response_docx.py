@@ -98,6 +98,20 @@ class CompileResponseDocxTests(unittest.TestCase):
                 ].runs[0].bold
             )
 
+    def test_heading_starting_with_response_stays_title(self) -> None:
+        # "# Response to Reviewers" used to match the optional-colon response
+        # label and came out as bold "Response: to Reviewers"; a body sentence
+        # beginning with "Responses" must stay body text as well.
+        module = load_module()
+        blocks = module.parse_response_markdown(
+            "# Response to Reviewers\n\nResponses to each comment follow.\n\n"
+            "Reviewer #1:\n\nComment 1) Clarify.\n\nResponse: Clarified.\n"
+        )
+        kinds = [(block.kind, block.text) for block in blocks]
+        self.assertEqual(kinds[0], ("title", "Response to Reviewers"))
+        self.assertEqual(kinds[1], ("body", "Responses to each comment follow."))
+        self.assertIn(("response", "Response: Clarified."), kinds)
+
 
 if __name__ == "__main__":
     unittest.main()

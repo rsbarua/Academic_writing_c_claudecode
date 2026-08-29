@@ -7,6 +7,8 @@ Write/Edit/MultiEdit that would:
     in the same drafts folder (Rule 8), or
   - create an analysis script (`data/.../py/*.py`) without an `analysis_plan.md`
     in the corresponding data folder (Rule 7).
+A plan only counts when it has no unresolved template placeholders AND carries
+a checked `- [x] 사용자 승인 완료` line; a plan missing that line is blocked.
 
 Exit-code contract (Claude Code): 0 = allow, 2 = block (stderr is shown to
 Claude). Any other failure is treated as a non-blocking error.
@@ -43,6 +45,12 @@ PERCENT_PLACEHOLDER_RE = re.compile(r"\[%\]")
 UNCHECKED_APPROVAL_RE = re.compile(
     r"-\s*\[\s\]\s*(?:\*\*)?사용자 승인 완료", re.IGNORECASE
 )
+# A plan counts as approved only with an explicitly CHECKED approval box. A plan
+# that omits the line altogether is not approved (CLAUDE.md Rule 9: an unchecked
+# or missing approval is not a plan).
+CHECKED_APPROVAL_RE = re.compile(
+    r"-\s*\[\s*x\s*\]\s*(?:\*\*)?사용자 승인 완료", re.IGNORECASE
+)
 
 
 def _norm(value: str) -> str:
@@ -64,6 +72,8 @@ def plan_problem(plan: Path) -> str | None:
         or UNCHECKED_APPROVAL_RE.search(text)
     ):
         return "unresolved template or not approved"
+    if not CHECKED_APPROVAL_RE.search(text):
+        return "not approved"
     return None
 
 

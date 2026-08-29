@@ -522,5 +522,119 @@ class IsStructuralNumberTests(unittest.TestCase):
         )
 
 
+class NumberGateRegressionTests(unittest.TestCase):
+    """Regressions for confirmed false FAIL / crash defects in the number gate."""
+
+    def _project(self, tmp: Path, csv_text: str, body: str):
+        results_dir = tmp / "results"
+        results_dir.mkdir()
+        (results_dir / "table2_outcomes.csv").write_text(csv_text, encoding="utf-8")
+        artifact = tmp / "05_results.md"
+        artifact.write_text(body, encoding="utf-8")
+        return results_dir, artifact
+
+    def test_ragged_csv_row_with_surplus_fields_does_not_crash(self) -> None:
+        # csv.DictReader stores extra fields under key None as a list.
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            results_dir, artifact = self._project(
+                Path(tmp),
+                "endpoint,mean\nprimary,54.32,99.9,extra\n",
+                "The mean was 54.3.",
+            )
+            numbers = module.load_result_numbers(results_dir)
+            self.assertEqual([n.value for n in numbers], [54.32])
+            result = module.check_numbers([artifact], results_dir=results_dir)
+            self.assertTrue(result.passed)
+
+    def test_bounded_csv_p_cell_matches_same_bound_in_manuscript(self) -> None:
+        # CSV stores "<0.001" (not a numeric p); manuscript "p<0.001" restates it.
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            results_dir, artifact = self._project(
+                Path(tmp),
+                "endpoint,p_value\nprimary,<0.001\n",
+                "The difference was significant (*p*<0.001).",
+            )
+            result = module.check_numbers([artifact], results_dir=results_dir)
+            self.assertTrue(result.passed, result.failures)
+
+    def test_bounded_csv_p_cell_rejects_tighter_or_opposite_bound(self) -> None:
+        module = load_module()
+        cell = module.ResultNumber(value=0.01, raw="<0.01", source=Path("x.csv"), row=2, column="p_value")
+        tighter = module.NumberToken(
+            value=0.001, number="0.001", line=1, comparator="<",
+            is_p_value=True, decimals=3, context="p<0.001",
+        )
+        looser = tighter._replace(value=0.05, number="0.05", decimals=2, context="p<0.05")
+        opposite = tighter._replace(comparator=">", context="p>0.001")
+        self.assertFalse(module.matches_number(tighter, cell))
+        self.assertTrue(module.matches_number(looser, cell))
+        self.assertFalse(module.matches_number(opposite, cell))
+
+    def test_uppercase_p_is_recognised_as_p_value_comparison(self) -> None:
+        # "P<0.05" must be validated as a p-value bound, not as the bare literal 0.05.
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            results_dir, artifact = self._project(
+                Path(tmp),
+                "endpoint,p_value\nprimary,0.03\n",
+                "Pain scores improved (P<0.05).",
+            )
+            tokens = module.iter_artifact_numbers(artifact)
+            self.assertEqual(len(tokens), 1)
+            self.assertTrue(tokens[0].is_p_value)
+            self.assertEqual(tokens[0].comparator, "<")
+            result = module.check_numbers([artifact], results_dir=results_dir)
+            self.assertTrue(result.passed, result.failures)
+
+    def test_hyphen_attached_label_numbers_are_structural(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = Path(tmp) / "05_results.md"
+            artifact.write_text(
+                "Fusion at L4-5 and L5-S1 was assessed; C5-6 levels were excluded.\n"
+                "Patients with COVID-19 (ICD-10 codes) were excluded.\n"
+                "Grade 2-3 was common.\n",
+                encoding="utf-8",
+            )
+            tokens = module.iter_artifact_numbers(artifact)
+            # Only the genuine range "2-3" survives; label suffixes do not.
+            self.assertEqual([t.number for t in tokens], ["2", "3"])
+
+    def test_half_up_rounding_of_csv_value_is_accepted(self) -> None:
+        # round(2.675, 2) == 2.67 (banker's on binary float); manuscripts print 2.68.
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            results_dir, artifact = self._project(
+                Path(tmp),
+                "endpoint,mean\nprimary,2.675\n",
+                "The mean score was 2.68 points.",
+            )
+            result = module.check_numbers([artifact], results_dir=results_dir)
+            self.assertTrue(result.passed, result.failures)
+            # The banker's-rounded form is still accepted too.
+            artifact.write_text("The mean score was 2.67 points.", encoding="utf-8")
+            self.assertTrue(module.check_numbers([artifact], results_dir=results_dir).passed)
+
+    def test_line_numbers_after_fence_and_html_comment_are_preserved(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            results_dir, artifact = self._project(
+                Path(tmp),
+                "endpoint,mean\nprimary,54.32\n",
+                "Intro line.\n"
+                "```\n"
+                "example 99.9\n"
+                "```\n"
+                "<!-- note\n"
+                "spanning 88.8 -->\n"
+                "The wrong value was 77.7.\n",
+            )
+            result = module.check_numbers([artifact], results_dir=results_dir)
+            self.assertFalse(result.passed)
+            self.assertEqual([(f.number, f.line) for f in result.failures], [("77.7", 7)])
+
+
 if __name__ == "__main__":
     unittest.main()

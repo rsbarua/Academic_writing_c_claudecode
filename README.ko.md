@@ -6,7 +6,7 @@ Claude AI를 활용한 의학 학술 논문 작성을 위한 체계적인 워크
 
 ## 버전
 
-**v1.6.3** (2026-07-02)
+**v1.6.4** (2026-08-30)
 
 [![tests](https://github.com/grotyx/Academic_writing_c_claudecode/actions/workflows/tests.yml/badge.svg)](https://github.com/grotyx/Academic_writing_c_claudecode/actions/workflows/tests.yml)
 
@@ -120,7 +120,7 @@ project/
 │   ├── critical_review.py        # OpenRouter 멀티모델 적대적 검토 호출
 │   ├── critical_models.txt       # OpenRouter 모델 목록 (외부화)
 │   ├── critical_prompts/         # 적대적 프롬프트 단일 정본 (manuscript.txt, response.txt)
-│   └── hooks/                    # 강제 hook (enforce_gates, session_contract, lint_on_edit, style_intent)
+│   └── hooks/                    # 강제 hook (enforce_gates, session_contract, lint_on_edit, style_intent) + run.sh 런처(py→python3 자동 선택)
 ├── tests/                        # 검증 스크립트용 pytest 스위트
 ├── results/                      # 분석 결과
 ├── drafts/                       # 원고 섹션, 테이블, 그림
@@ -360,6 +360,17 @@ Copyright (c) 2026 박상민, 서울대학교 분당서울대학교병원
 ---
 
 ## 변경 이력
+
+### v1.6.4 (2026-08-30)
+
+**하네스 전체 리뷰(Claude Fable) — 결함 16건 수정, 회귀 테스트 33개**
+
+- **게이트 false-PASS / false-FAIL / 크래시 (HIGH):** `check_citations.py`가 malformed·비ASCII `[EVID:…]` 태그(`o'brien_2021`, `müller_2020`)를 토큰 0개로 PASS시키던 것을 FAIL로; `search_pubmed.py`는 생성 id를 slugify하고 성(last name) 전체 사용. `check_numbers.py`: results CSV 행에 필드가 남아도 크래시 없음; 원고 `p<0.001`이 CSV 셀 `<0.001`과 매칭(같거나 느슨한 bound); 대문자 `P<0.05`도 p-비교로 인식; `L4-5`·`C5-6`·`COVID-19`·`ICD-10` 같은 접미 숫자는 구조 표기로 제외; ROUND_HALF_UP도 허용(2.675 → 2.68).
+- **강제 훅이 실제로 켜짐:** 훅을 신규 `scripts/hooks/run.sh`(`py` 있으면 py, 없으면 `python3`)로 실행 — 이전엔 macOS/Linux에서 모든 훅이 exit 127로 Rule 7·8 강제가 조용히 꺼져 있었음. `enforce_gates.py`는 승인 체크박스가 **아예 없는** plan도 미승인 처리(Rule 9 문구가 실제론 강제되지 않던 것).
+- **`check_gate.py`:** artifact 경로를 슬래시 무관 비교(`drafts\05_results.md` == `drafts/05_results.md`, `--verify-hash`/`--cross-check` 포함); 다중 블록 gate 파일을 `artifact:` 단위로 분리해 `--artifact`로 선택 — 앞 블록 FAIL이 뒤 블록 PASS에 가려지지 않음; 블록 여러 개인데 `--artifact` 없으면 loud FAIL. `_TEMPLATE.GATE.md`에 문서화.
+- **`check_response_coverage.py`:** 인용형 대괄호(`[12]`, `[3-5]`, `[EVID:id]`)를 placeholder로 안 잡음 — 문헌 인용 반박문 통과.
+- **소소:** `check_abstract.py` half-up 반올림; `format_references.py` author-year 모드에서 `author_year_keyword` id 허용(`evidence_guide.md` v0.3.1로 문서 정렬); `compile_response_docx.py`가 "# Response to Reviewers"를 "Response: to Reviewers"로 망가뜨리지 않음; `check_citations`/`check_numbers`/`check_coverage` 코드펜스 뒤 줄번호 정확; `check_coverage.py` 마크다운 표 행별 집계; `check_abbreviations.py` allowlist가 `COVID-19`를 어간으로 매칭; `lint_manuscript.py` 이탤릭 `*p* = .02` 잡고 "group = 30"은 안 잡음.
+- 테스트 262 → 295.
 
 ### v1.6.3 (2026-07-02)
 

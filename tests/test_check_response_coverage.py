@@ -111,6 +111,27 @@ class CoverageCheckTests(unittest.TestCase):
             result = self.module.check_response_coverage(path)
             self.assertIn("RESPONSE_PLACEHOLDER", self._codes(result))
 
+    def test_citation_brackets_are_not_placeholders(self) -> None:
+        # Regression: any [bracket] tripped RESPONSE_PLACEHOLDER, so a response
+        # citing "[12]" or "[EVID:kim_2020]" failed the gate.
+        letter = (
+            "Reviewer #1:\n\nComment 1) Please cite supporting work.\n\n"
+            "Response: We now cite the trial [12], the cohorts [3-5] and [1, 2], "
+            "and the meta-analysis [EVID:kim_2020].\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_letter(Path(tmp), letter)
+            result = self.module.check_response_coverage(path)
+            self.assertTrue(result.passed, [i.message for i in result.failures])
+
+    def test_template_brackets_still_flagged_as_placeholders(self) -> None:
+        for token in ("[insert text]", "[TODO]", "[TBD]", "[Response text.]", "[응답 작성]"):
+            letter = f"Reviewer #1:\n\nComment 1) A comment.\n\nResponse: We agree [12]. {token}\n"
+            with tempfile.TemporaryDirectory() as tmp:
+                path = write_letter(Path(tmp), letter)
+                result = self.module.check_response_coverage(path)
+                self.assertIn("RESPONSE_PLACEHOLDER", self._codes(result), token)
+
     def test_empty_letter_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = write_letter(Path(tmp), "No structure here at all.\n")

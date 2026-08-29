@@ -47,12 +47,15 @@ RESULTS_INTERPRETATION_TERMS = [
     "because",
 ]
 
+# A p token is `p`, optionally italicised (`*p*`), and never glued to a preceding
+# letter (so "group = 30" is not a p-value). The last, generic pattern fires only
+# on an UNformatted plain `p`, so a correct `*p* = 0.023` stays clean.
 STAT_STYLE_PATTERNS = [
-    (re.compile(r"\b[Pp]\s*=\s*0\.000\b"), "Use p < 0.001, not p = 0.000."),
-    (re.compile(r"\b[Pp]\s*=\s*NS\b", re.IGNORECASE), "Use exact p-values or state not significant in text."),
-    (re.compile(r"\bP\s*[<=>]"), "Use lowercase italic p in manuscript text, e.g., *p* = 0.023."),
-    (re.compile(r"\bp\s*[<=>]\s*\.\d+"), "Use a leading zero for p-values, e.g., p = 0.023."),
-    (re.compile(r"p\s*[<=>]"), "Use formatted *p* in final manuscript text."),
+    (re.compile(r"(?<![A-Za-z])\*?[Pp]\*?\s*=\s*0\.000\b"), "Use p < 0.001, not p = 0.000."),
+    (re.compile(r"(?<![A-Za-z])\*?[Pp]\*?\s*=\s*NS\b", re.IGNORECASE), "Use exact p-values or state not significant in text."),
+    (re.compile(r"(?<![A-Za-z])\*?P\*?\s*[<=>]"), "Use lowercase italic p in manuscript text, e.g., *p* = 0.023."),
+    (re.compile(r"(?<![A-Za-z])\*?p\*?\s*[<=>]\s*\.\d+"), "Use a leading zero for p-values, e.g., p = 0.023."),
+    (re.compile(r"(?<![A-Za-z*])p\s*[<=>]"), "Use formatted *p* in final manuscript text."),
 ]
 
 

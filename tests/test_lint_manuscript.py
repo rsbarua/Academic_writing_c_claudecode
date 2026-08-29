@@ -161,5 +161,26 @@ class KeywordsLintTests(unittest.TestCase):
             self.assertNotIn("KEYWORDS_MISSING", codes)
 
 
+class StatFormatLintTests(unittest.TestCase):
+    """p-value patterns must catch italic *p* and ignore a word ending in p."""
+
+    def test_italic_p_caught_and_word_ending_in_p_ignored(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "05_results.md"
+            path.write_text(
+                "Each group = 30 patients.\n"        # 1: not a p-value
+                "*p* = 0.000 was reported.\n"        # 2: italic p = 0.000
+                "Also *p* = .02 here.\n"             # 3: italic p, no leading zero
+                "Correct *p* = 0.023 stays clean.\n",  # 4: formatted correctly
+                encoding="utf-8",
+            )
+            stat = {line: msg for code, _p, line, msg in module.lint_file(path, {}) if code == "STAT_FORMAT"}
+            self.assertNotIn(1, stat)
+            self.assertIn("0.001", stat.get(2, ""))
+            self.assertIn("leading zero", stat.get(3, ""))
+            self.assertNotIn(4, stat)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -6,7 +6,7 @@
 
 ## 版本
 
-**v1.6.3** (2026-07-02)
+**v1.6.4** (2026-08-30)
 
 [![tests](https://github.com/grotyx/Academic_writing_c_claudecode/actions/workflows/tests.yml/badge.svg)](https://github.com/grotyx/Academic_writing_c_claudecode/actions/workflows/tests.yml)
 
@@ -113,7 +113,7 @@ project/
 │   ├── critical_review.py        # OpenRouter multi-model adversarial caller
 │   ├── critical_models.txt       # OpenRouter model list (externalized)
 │   ├── critical_prompts/         # Adversarial prompt single-source (manuscript.txt, response.txt)
-│   └── hooks/                    # 强制执行 hooks（enforce_gates、session_contract、lint_on_edit、style_intent）
+│   └── hooks/                    # 强制执行 hooks（enforce_gates、session_contract、lint_on_edit、style_intent）+ run.sh 启动器（py→python3 自动选择）
 ├── tests/                        # 验证脚本的 pytest 测试套件
 ├── results/                      # 分析输出
 ├── drafts/                       # 稿件章节、表格、图表
@@ -337,6 +337,17 @@ Copyright (c) 2026 Sang-Min Park, Seoul National University Bundang Hospital
 ---
 
 ## 变更记录
+
+### v1.6.4 (2026-08-30)
+
+**框架全面评审（Claude Fable）— 修复 16 项缺陷，新增 33 个回归测试**
+
+- **门禁 false-PASS / false-FAIL / 崩溃（HIGH）:** `check_citations.py` 此前对畸形或非 ASCII 的 `[EVID:…]` 标签（`o'brien_2021`、`müller_2020`）以 0 token 报 PASS，现改为 FAIL；`search_pubmed.py` 对生成的 id 做 slugify 并使用完整姓氏。`check_numbers.py`：results CSV 行多出字段不再崩溃；正文 `p<0.001` 可匹配 CSV 单元格 `<0.001`（相同或更宽松的界）；大写 `P<0.05` 识别为 p 比较；`L4-5`、`C5-6`、`COVID-19`、`ICD-10` 等后缀数字视为结构标记而非结果；同时接受 ROUND_HALF_UP（2.675 → 2.68）。
+- **强制 hook 真正生效:** hook 通过新增 `scripts/hooks/run.sh`（有 `py` 用 py，否则 `python3`）运行 — 此前在 macOS/Linux 上所有 hook 均 exit 127，Rule 7/8 强制被静默关闭。`enforce_gates.py` 现对**完全没有**审批复选框的 plan 也按未审批处理（Rule 9 的措辞此前并未真正执行）。
+- **`check_gate.py`:** artifact 路径比较不区分斜杠（`drafts\05_results.md` == `drafts/05_results.md`，含 `--verify-hash`/`--cross-check`）；多块 gate 文件按 `artifact:` 拆分并由 `--artifact` 选择 — 前一块的 FAIL 不再被后一块的 PASS 掩盖；多块且未给 `--artifact` 时 loud FAIL。`_TEMPLATE.GATE.md` 已记录。
+- **`check_response_coverage.py`:** 引用形方括号（`[12]`、`[3-5]`、`[EVID:id]`）不再视为 placeholder — 引用文献的反驳可通过。
+- **细节:** `check_abstract.py` half-up 舍入；`format_references.py` 的 author-year 模式接受 `author_year_keyword` id（与 `evidence_guide.md` v0.3.1 对齐）；`compile_response_docx.py` 不再把 "# Response to Reviewers" 改写成 "Response: to Reviewers"；`check_citations`/`check_numbers`/`check_coverage` 代码围栏后的行号正确；`check_coverage.py` 对 markdown 表格逐行计数；`check_abbreviations.py` allowlist 以词干匹配 `COVID-19`；`lint_manuscript.py` 能捕获斜体 `*p* = .02` 且不再误报 "group = 30"。
+- 测试 262 → 295。
 
 ### v1.6.3 (2026-07-02)
 
